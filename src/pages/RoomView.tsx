@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, Clock, User, FileIcon } from 'lucide-react';
+import { Download, Clock, User, FileIcon, CheckSquare, Square, PackageCheck } from 'lucide-react';
 import SoundwaveVisualizer from '../components/SoundwaveVisualizer';
 import { getRoomByCode, getFilesByRoom } from '../services/roomService';
 import { downloadFile } from '../services/storageService';
@@ -16,6 +16,8 @@ export default function RoomView({ roomCode }: RoomViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
   useEffect(() => {
     loadRoom();
@@ -42,18 +44,103 @@ export default function RoomView({ roomCode }: RoomViewProps) {
 
   const handleDownload = async (file: FileData) => {
     setDownloadingIds((prev) => new Set(prev).add(file.id));
-    await downloadFile(file);
-    setDownloadingIds((prev) => {
+    try {
+      await downloadFile(file);
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === file.id ? { ...f, download_count: f.download_count + 1 } : f
+        )
+      );
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Failed to download file. Please try again.');
+    } finally {
+      setDownloadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(file.id);
+        return next;
+      });
+    }
+  };
+
+  const toggleFileSelection = (fileId: string) => {
+    setSelectedFiles((prev) => {
       const next = new Set(prev);
-      next.delete(file.id);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
       return next;
     });
+  };
 
-    setFiles((prev) =>
-      prev.map((f) =>
-        f.id === file.id ? { ...f, download_count: f.download_count + 1 } : f
-      )
-    );
+  const toggleSelectAll = () => {
+    if (selectedFiles.size === files.length) {
+      setSelectedFiles(new Set());
+    } else {
+      setSelectedFiles(new Set(files.map(f => f.id)));
+    }
+  };
+
+  const downloadSelected = async () => {
+    if (selectedFiles.size === 0) return;
+    
+    setIsDownloadingAll(true);
+    const filesToDownload = files.filter(f => selectedFiles.has(f.id));
+    
+    for (const file of filesToDownload) {
+      setDownloadingIds((prev) => new Set(prev).add(file.id));
+      try {
+        await downloadFile(file);
+        // Small delay between downloads to prevent browser blocking
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === file.id ? { ...f, download_count: f.download_count + 1 } : f
+          )
+        );
+      } catch (error) {
+        console.error(`Failed to download ${file.file_name}:`, error);
+      } finally {
+        setDownloadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(file.id);
+          return next;
+        });
+      }
+    }
+    
+    setIsDownloadingAll(false);
+    setSelectedFiles(new Set());
+  };
+
+  const downloadAll = async () => {
+    setIsDownloadingAll(true);
+    
+    for (const file of files) {
+      setDownloadingIds((prev) => new Set(prev).add(file.id));
+      try {
+        await downloadFile(file);
+        // Small delay between downloads
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === file.id ? { ...f, download_count: f.download_count + 1 } : f
+          )
+        );
+      } catch (error) {
+        console.error(`Failed to download ${file.file_name}:`, error);
+      } finally {
+        setDownloadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(file.id);
+          return next;
+        });
+      }
+    }
+    
+    setIsDownloadingAll(false);
   };
 
   if (loading) {
@@ -125,8 +212,53 @@ export default function RoomView({ roomCode }: RoomViewProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-cyan-300">Available Files</h2>
-              <span className="text-sm text-slate-400">{files.length} files</span>
+              <span className="text-sm text-slate-400">{files.length} file{files.length !== 1 ? 's' : ''}</span>
             </div>
+
+            {files.length > 1 && (
+              <div className="flex items-center gap-3 p-4 bg-slate-800/50 rounded-xl border border-cyan-700/30">
+                <button
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2 text-cyan-400 hover:text-cyan-300 transition-colors"
+                  data-testid="select-all-files-btn"
+                >
+                  {selectedFiles.size === files.length ? (
+                    <CheckSquare className="w-5 h-5" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
+                  <span className="text-sm font-medium">
+                    {selectedFiles.size === files.length ? 'Deselect All' : 'Select All'}
+                  </span>
+                </button>
+
+                <div className="flex-1" />
+
+                {selectedFiles.size > 0 && (
+                  <button
+                    onClick={downloadSelected}
+                    disabled={isDownloadingAll}
+                    className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg transition-colors font-semibold text-white"
+                    data-testid="download-selected-btn"
+                  >
+                    <Download className={`w-5 h-5 ${isDownloadingAll ? 'animate-bounce' : ''}`} />
+                    <span>Download Selected ({selectedFiles.size})</span>
+                  </button>
+                )}
+
+                {selectedFiles.size === 0 && (
+                  <button
+                    onClick={downloadAll}
+                    disabled={isDownloadingAll}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg transition-colors font-semibold text-white"
+                    data-testid="download-all-btn"
+                  >
+                    <PackageCheck className={`w-5 h-5 ${isDownloadingAll ? 'animate-bounce' : ''}`} />
+                    <span>{isDownloadingAll ? 'Downloading All...' : 'Download All'}</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             {files.length === 0 ? (
               <div className="text-center py-12">
@@ -137,30 +269,54 @@ export default function RoomView({ roomCode }: RoomViewProps) {
               <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
                 {files.map((file) => {
                   const isDownloading = downloadingIds.has(file.id);
+                  const isSelected = selectedFiles.has(file.id);
                   return (
                     <div
                       key={file.id}
-                      className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-cyan-700/30 hover:border-cyan-600/50 transition-all group"
+                      className={`flex items-center justify-between p-4 rounded-xl border transition-all group ${
+                        isSelected
+                          ? 'bg-cyan-900/20 border-cyan-600/50'
+                          : 'bg-slate-800/50 border-cyan-700/30 hover:border-cyan-600/50'
+                      }`}
                     >
+                      {files.length > 1 && (
+                        <button
+                          onClick={() => toggleFileSelection(file.id)}
+                          className="mr-3 text-cyan-400 hover:text-cyan-300 transition-colors"
+                          data-testid={`select-file-${file.id}`}
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-6 h-6" />
+                          ) : (
+                            <Square className="w-6 h-6 opacity-50 group-hover:opacity-100" />
+                          )}
+                        </button>
+                      )}
+                      
                       <div className="flex items-center space-x-4 flex-1 min-w-0">
-                        <div className="p-3 bg-cyan-500/10 rounded-lg group-hover:bg-cyan-500/20 transition-colors">
+                        <div className={`p-3 rounded-lg transition-colors ${
+                          isSelected 
+                            ? 'bg-cyan-500/30' 
+                            : 'bg-cyan-500/10 group-hover:bg-cyan-500/20'
+                        }`}>
                           <FileIcon className="w-6 h-6 text-cyan-400" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-slate-200 font-medium truncate">
+                          <p className="text-slate-200 font-medium truncate" data-testid={`file-name-${file.id}`}>
                             {file.file_name}
                           </p>
                           <div className="flex items-center space-x-3 text-xs text-slate-400 mt-1">
                             <span>{formatFileSize(file.file_size)}</span>
                             <span>•</span>
-                            <span>{file.download_count} downloads</span>
+                            <span>{file.download_count} download{file.download_count !== 1 ? 's' : ''}</span>
                           </div>
                         </div>
                       </div>
                       <button
                         onClick={() => handleDownload(file)}
                         disabled={isDownloading}
-                        className="ml-4 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center space-x-2 group"
+                        className="ml-4 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center space-x-2"
+                        data-testid={`download-file-${file.id}`}
                       >
                         <Download className={`w-5 h-5 ${isDownloading ? 'animate-bounce' : ''}`} />
                         <span className="font-semibold">

@@ -19,7 +19,8 @@ export async function uploadFile(
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
-      return null;
+      // Throw error to propagate it to the caller
+      throw new Error(uploadError.message || 'Failed to upload file');
     }
 
     if (onProgress) onProgress(100);
@@ -39,13 +40,14 @@ export async function uploadFile(
     if (insertError) {
       console.error('Database insert error:', insertError);
       await supabase.storage.from(STORAGE_BUCKET).remove([fileName]);
-      return null;
+      throw new Error('Failed to save file metadata');
     }
 
     return fileData;
   } catch (error) {
     console.error('Upload exception:', error);
-    return null;
+    // Re-throw the error so it can be handled by the caller
+    throw error;
   }
 }
 
