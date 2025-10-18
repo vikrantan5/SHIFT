@@ -88,8 +88,7 @@ export default function CreateRoom({ onRoomCreated }: CreateRoomProps) {
 
   const copyLink = () => {
     if (room) {
-      const link = `${window.location.origin}/room/${room.room_code}`;
-      navigator.clipboard.writeText(link);
+      navigator.clipboard.writeText(room.room_code);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
